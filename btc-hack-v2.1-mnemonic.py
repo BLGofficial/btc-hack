@@ -1,79 +1,56 @@
-# BTC hack v2.1
+# BTC hack v2
 # Made by David Gilbert
 # https://github.com/davidmgilbert/btc-hack
 # https://www.davidmgilbert.com
+
 #!/usr/bin/python3
 
 import hashlib
 import os
-import random
+import hashlib
 import binascii
-import requests 
+import requests
 import ecdsa
 import base58
-import datetime
 import webbrowser
 import PySimpleGUI as sg
 from json import (load as jsonload, dump as jsondump)
 from os import path
 import json
-import hmac
-import base64
 
-start_time = datetime.datetime.now()
+def generate_private_key():
+    return binascii.hexlify(os.urandom(32)).decode('utf-8')
 
-def bip(num):
-    with open('BIP0039.txt', 'r') as f:
-        words = f.read().split()
-        for word in words:
-            sent = [random.choice(words)
-                for word in range(int(num))]
-            return ' '.join(sent)
-
-def passw(filename):
-    try:
-        with open(filename, 'r') as f:
-            words = f.read().split()
-            for word in words:
-                sent = [random.choice(words)
-                        for word in range(int(1))]
-                return ' '.join(sent)
-    except FileNotFoundError:
-        pass
-    except TypeError:
-        pass
-
-
-def hmac512(mnemonic, passphrase):
-    d = mnemonic+' '+ passphrase
-    return d
-    
-def master(hmacsha512):
-    return hashlib.sha256(hmacsha512.encode("utf-8")).hexdigest().upper()
-
-
-def pubkey(masterkey):
-    privatekey = binascii.unhexlify(masterkey)
-    s = ecdsa.SigningKey.from_string(privatekey, curve = ecdsa.SECP256k1)
-    return '04' + binascii.hexlify(s.verifying_key.to_string()).decode('utf-8')
-
-def addr(public_key):
-    output = []; alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
-    var = hashlib.new('ripemd160')
-    var.update(hashlib.sha256(binascii.unhexlify(public_key.encode())).digest())
-    var = '00' + var.hexdigest() + hashlib.sha256(hashlib.sha256(binascii.unhexlify(('00' + var.hexdigest()).encode())).digest()).hexdigest()[0:8]
-    count = [char != '0' for char in var].index(True) // 2
-    n = int(var, 16)
-    while n > 0:
-        n, remainder = divmod(n, 58)
-        output.append(alphabet[remainder])
-    for i in range(count): output.append(alphabet[0])
-    return ''.join(output[::-1])
-
-def wif(masterkey):
-    var80 = "80"+masterkey
+def private_key_to_WIF(private_key):
+    var80 = "80" + str(private_key) 
     var = hashlib.sha256(binascii.unhexlify(hashlib.sha256(binascii.unhexlify(var80)).hexdigest())).hexdigest()
     return str(base58.b58encode(binascii.unhexlify(str(var80) + str(var[0:8]))), 'utf-8')
+
+def private_key_to_public_key(private_key):
+    sign = ecdsa.SigningKey.from_string(binascii.unhexlify(private_key), curve = ecdsa.SECP256k1)
+    return ('04' + binascii.hexlify(sign.verifying_key.to_string()).decode('utf-8'))
+
+def public_key_to_address(public_key):
+    alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+    count = 0; val = 0
+    var = hashlib.new('ripemd160')
+    var.update(hashlib.sha256(binascii.unhexlify(public_key.encode())).digest())
+    doublehash = hashlib.sha256(hashlib.sha256(binascii.unhexlify(('00' + var.hexdigest()).encode())).digest()).hexdigest()
+    address = '00' + var.hexdigest() + doublehash[0:8]
+    for char in address:
+        if (char != '0'):
+            break
+        count += 1
+    count = count // 2
+    n = int(address, 16)
+    output = []
+    while (n > 0):
+        n, remainder = divmod (n, 58)
+        output.append(alphabet[remainder])
+    while (val < count):
+        output.append(alphabet[0])
+        val += 1
+    return ''.join(output[::-1])
 
 def get_balance(address):
     #time.sleep(0.2) #This is to avoid over-using the API and keep the program running indefinately. (Un-comment if exceeding requests)
@@ -82,7 +59,6 @@ def get_balance(address):
         return float(response.json()['data']['balance']) 
     except:
         return -1
-
 
 SETTINGS_FILE = path.join(path.dirname(__file__), r'settings_file.cfg')
 DEFAULT_SETTINGS = {'theme': sg.theme()}
@@ -138,18 +114,15 @@ def create_main_window(settings):
     menu_def = [['&Menu', ['&Settings', 'E&xit']]]
 
     layout = [[sg.Menu(menu_def)],
-              [sg.Text('Number of mnemonic words', size=(30,1), font=('Comic sans ms', 10)),
-               sg.Spin(values=('3', '6', '9', '12', '15', '18', '21', '24'),size=(3,1), key='num'), sg.Text('', size=(17,1))],
               [sg.Text('Number of addresses tried so far ... ', size=(30,1), font=('Comic sans ms', 10)),
                sg.Text('', size=(30,1), font=('Comic sans ms', 10), key='_TRIES_')],
               [sg.Text('Number of positive balances ... ', size=(30,1), font=('Comic sans ms', 10)),
                sg.Text('', size=(30,1), font=('Comic sans ms', 10), key='_WINS_')],
               [sg.Text('')],
               [sg.Output(size=(87, 20), font=('Comic sans ms', 8), key='out')],
-              [sg.Text('Mnemonic dictionary file:', size=(12,1), font=('Comic sans ms', 10)),sg.In(size=(65, 1),key='-in-'), sg.FileBrowse()],
               [sg.Button('Start/Stop',  font=('Comic sans ms', 10))]]
 
-    return sg.Window('BTC Hack v2.1 - mnemonic',
+    return sg.Window('BTC Hack v2',
                      layout=layout,
                      default_element_size=(9,1))
 
@@ -157,7 +130,7 @@ def create_main_window(settings):
 
 def main():
     window, settings = None, load_settings(SETTINGS_FILE, DEFAULT_SETTINGS )
-    generator = False
+    process = False
     attempts = 0
     successes = 0
     while True:
@@ -169,40 +142,36 @@ def main():
         if event in (None, 'Exit'):
             break
         elif event == 'Start/Stop':
-            generator = not generator
+            process = not process
             attempts = attempts + 1
-        if generator:
-            attempts = attempts + 1
-            filename = values['-in-'].rstrip()
-            num = values['num']
-            mnemonic = bip(num)
-            passphrase = passw(filename)
-            hmacsha512 = hmac512(mnemonic, passphrase)
-            masterkey = master(hmacsha512)
-            public_key = pubkey(masterkey)
-            address = addr(public_key)
-            WIF = wif(masterkey)
-            data = (masterkey, address)
+        if process:
+            private_key = generate_private_key()
+            public_key = private_key_to_public_key(private_key)
+            address = public_key_to_address(public_key)
+            data = (private_key, address)
             balance = get_balance(data[1])
+            attempts = attempts + 1
+            private_key = data[0]
+            address = data[1]
             if (balance == 0.00000000):
-                 print('mnemonic and passphrase:   '+str(mnemonic)+ ' ' +str(passphrase)+'\n'+
-                  'private key:                           '+str(masterkey)+'\n'+
-                  'address:                                 '+str(address)+'\n'+
-                  'wif:                                        '+str(WIF)+"\n"+
+                print("Address: " + "{:<34}".format(str(address)) + "\n" +
+                   "Private key: " + str(private_key) + "\n" +
+                   "WIF private key: " + str(private_key_to_WIF(private_key)) + "\n" +
+                   "Public key: " + str(private_key_to_public_key(private_key)).upper() + "\n" +
                    "Balance: " + str(balance) + "\n\n")
             elif (balance > 0.00000000):
                 successes = successes + 1
                 file = open("found.txt","a")
-                file.write('mnemonic and passphrase:   '+str(mnemonic)+ ' ' +str(passphrase)+'\n'+
-                  'private key:                           '+str(masterkey)+'\n'+
-                  'address:                                 '+str(address)+'\n'+
-                  'wif:                                        '+str(WIF)+"\n"+
+                file.write("Address: " + str(address) + "\n" +
+                   "Private key: " + str(private_key) + "\n" +
+                   "WIF private key: " + str(private_key_to_WIF(private_key)) + "\n" +
+                   "Public key: " + str(private_key_to_public_key(private_key)).upper() + "\n" +
                    "Balance: " + str(balance) + "\n\n")
                 file.close()
-                print('mnemonic and passphrase:   '+str(mnemonic)+ ' ' +str(passphrase)+'\n'+
-                  'private key:                           '+str(masterkey)+'\n'+
-                  'address:                                 '+str(address)+'\n'+
-                  'wif:                                        '+str(WIF)+"\n"+
+                print("Address: " + "{:<34}".format(str(address)) + "\n" +
+                   "Private key: " + str(private_key) + "\n" +
+                   "WIF private key: " + str(private_key_to_WIF(private_key)) + "\n" +
+                   "Public key: " + str(private_key_to_public_key(private_key)).upper() + "\n" +
                    "Balance: " + str(balance) + "\n\n")
             
         elif event == 'Settings':
@@ -212,9 +181,9 @@ def main():
                 window = None
                 save_settings(SETTINGS_FILE, settings, values)
 
-
     
     window.Close()
     
 main()
+
 
